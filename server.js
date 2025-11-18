@@ -10,12 +10,12 @@ const app = express();
 const PORT = process.env.PORT || 7860;
 
 // Get the correct directory path for Hugging Face
-const __dirname = path.resolve();
+const projectRoot = process.cwd();
 
 // Middleware (HuggingFace compatible)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(__dirname)); // Serve everything from root directory
+app.use(express.static(projectRoot)); // Serve everything from root directory
 
 // Session middleware with file storage for production
 const FileStore = require('session-file-store')(session);
@@ -24,7 +24,7 @@ app.use(session({
     resave: false,
     saveUninitialized: false,
     store: new FileStore({
-        path: path.join(__dirname, 'sessions')
+        path: path.join(projectRoot, 'sessions')
     }),
     cookie: { 
         secure: false,
@@ -33,7 +33,7 @@ app.use(session({
 }));
 
 // JSON file for persistent user storage
-const dataDir = path.join(__dirname, 'data');
+const dataDir = path.join(projectRoot, 'data');
 const usersFile = path.join(dataDir, 'users.json');
 const tradesFile = path.join(dataDir, 'trades.json');
 const withdrawalsFile = path.join(dataDir, 'withdrawals.json');
@@ -152,12 +152,12 @@ function generateTransactionId() {
 
 // Safe file sending function
 function safeSendFile(res, filePath, fallbackPath = null) {
-    const fullPath = path.join(__dirname, filePath);
+    const fullPath = path.join(projectRoot, filePath);
     
     if (fs.existsSync(fullPath)) {
         res.sendFile(fullPath);
-    } else if (fallbackPath && fs.existsSync(path.join(__dirname, fallbackPath))) {
-        res.sendFile(path.join(__dirname, fallbackPath));
+    } else if (fallbackPath && fs.existsSync(path.join(projectRoot, fallbackPath))) {
+        res.sendFile(path.join(projectRoot, fallbackPath));
     } else {
         res.status(404).send(`
             <html>
@@ -554,7 +554,7 @@ function requireAdminAuth(req, res, next) {
 
 // Serve any PHP file as static (fallback)
 app.get('*.php', (req, res) => {
-    const filePath = path.join(__dirname, req.path);
+    const filePath = path.join(projectRoot, req.path);
     if (fs.existsSync(filePath)) {
         res.sendFile(filePath);
     } else {
@@ -595,7 +595,7 @@ app.use((err, req, res, next) => {
 // Start server (HuggingFace compatible)
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 iqoptions forex Server running on port ${PORT}`);
-    console.log(`📁 Working directory: ${__dirname}`);
+    console.log(`📁 Working directory: ${projectRoot}`);
     console.log(`📊 Loaded ${users.length} users from storage`);
     console.log(`📈 Loaded ${trades.length} trades from storage`);
     console.log(`💰 Loaded ${withdrawals.length} withdrawals from storage`);
