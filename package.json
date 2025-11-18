@@ -1,0 +1,29 @@
+{
+  "name": "iqoptions-forex",
+  "version": "1.0.0",
+  "description": "Investment and trading platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0",
+    "express-session": "^1.17.3",
+    "mysql2": "^2.3.3",
+    "bcryptjs": "^2.4.3",
+    "ejs": "^3.1.8",
+    "body-parser": "^1.20.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.16"
+  },
+  "keywords": [
+    "investment",
+    "trading",
+    "forex",
+    "cryptocurrency"
+  ],
+  "author": "iqoptions forex",
+  "license": "MIT"
+}
